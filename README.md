@@ -14,7 +14,7 @@ A high-performance Python solution that identifies Arabic dialects (**Saudi**, *
   - **Lebanese** (Levantine / Shami)
   - **MSA** (Modern Standard Arabic / الفصحى)
   - **Other** (Egyptian, Moroccan, Iraqi, etc., or Non-Arabic)
-- **Percentage Distribution (Option C)**: Provides exact estimated percentages across all target classes that sum to 100%.
+- **Percentage Distribution**: Provides exact estimated percentages across all target classes that sum to 100%.
 - **Arabic-First Evaluation**: Explicitly ignores foreign loanwords and code-switching (French, English), focusing strictly on Arabic phonology, morphology, vocabulary, and cadence.
 - **Real-Time Streaming Output**: Watch Gemini stream its phonetic observations and linguistic evidence token-by-token.
 - **Built-in Fallbacks**:
@@ -28,7 +28,7 @@ A high-performance Python solution that identifies Arabic dialects (**Saudi**, *
 1. **Prerequisites**: Python 3.10+ and a Gemini API Key.
 2. **Install Dependencies**:
    ```bash
-   pip install -r requirements_dialect.txt
+   pip install -r requirements.txt
    ```
 3. **Set your API Key** in `.env`:
    ```env
@@ -58,4 +58,4 @@ python cli_dialect.py --url "https://www.youtube.com/watch?v=F7-_TJ4R5YM" --star
 - `dialect_engine.py`: Core engine handling in-memory `yt-dlp` stream piping, `ffmpeg` slicing, Gemini multimodal prompting, and result parsing.
 - `app_dialect.py`: Full-featured Gradio web interface with interactive audio player, distribution charts, and live stream updates.
 - `cli_dialect.py`: Standalone command-line tool for quick terminal-based analysis.
-- `requirements_dialect.txt`: Dependencies list.
+- `requirements.txt`: Dependencies list.
