@@ -9,7 +9,7 @@ import sys
 from dialect_engine import DialectDetector
 
 def main():
-    parser = argparse.ArgumentParser(description="Identify Arabic Dialects (Saudi, Bahraini, Lebanese, MSA, Other) from a YouTube link.")
+    parser = argparse.ArgumentParser(description="Identify Arabic Dialects and Per-Speaker Percentages from a YouTube link.")
     parser.add_argument("--url", type=str, required=True, help="YouTube video URL")
     parser.add_argument("--start", type=int, default=60, help="Start offset in seconds (default: 60)")
     parser.add_argument("--duration", type=int, default=90, help="Duration of audio slice in seconds (default: 90)")
@@ -18,7 +18,7 @@ def main():
     args = parser.parse_args()
 
     print("\n" + "="*60)
-    print("  مُشخِّص اللهجات العربية | Arabic Dialect Identifier")
+    print("  مُشخِّص اللهجات والمتحدثين | Arabic Dialect & Speaker Identifier")
     print("="*60)
     print(f"Target URL: {args.url}")
     print(f"Sampling: {args.start}s to {args.start + args.duration}s ({args.duration}s duration)")
@@ -55,12 +55,19 @@ def main():
         sys.exit(1)
 
     parsed = detector.parse_analysis_result("".join(full_output))
-    print("\nSummary Summary:")
-    print(f"  -> Dominant Dialect: {parsed['dominant_dialect']}")
-    print(f"  -> Confidence: {parsed['confidence']}")
-    print("  -> Distribution:")
-    for dialect, pct in parsed['distribution_raw'].items():
-        print(f"       {dialect:10}: {pct}%")
+    print("\n" + "="*60)
+    print("  Analysis Summary:")
+    print(f"  -> Dominant Dialect : {parsed['dominant_dialect']}")
+    print(f"  -> Confidence       : {parsed['confidence']}")
+    if parsed.get("speakers"):
+        print("  -> Speakers Breakdown:")
+        for spk in parsed["speakers"]:
+            note_str = f" - {spk['note']}" if spk.get('note') else ""
+            print(f"       • {spk['speaker']} ({spk['dialect']}): {spk['percentage']:.0f}%{note_str}")
+    if parsed.get("dialect_distribution"):
+        print("  -> Dialect Distribution:")
+        for dialect, pct in parsed['dialect_distribution'].items():
+            print(f"       • {dialect}: {pct:.0f}%")
     print("="*60)
 
 if __name__ == "__main__":

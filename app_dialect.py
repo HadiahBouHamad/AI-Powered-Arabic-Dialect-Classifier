@@ -1,6 +1,6 @@
 """
-Gradio Web Interface for Arabic Dialect Identification
-Specialized for Saudi, Bahraini, Lebanese, MSA, and Other.
+Gradio Web Interface for Arabic Dialect & Multi-Speaker Identification
+Open Arabic dialect detection with per-speaker percentages.
 Powered by Gemini 3.1 Flash and in-memory audio extraction.
 """
 
@@ -103,8 +103,20 @@ def analyze_youtube(url, start_time, duration, custom_notes, model_choice):
         ):
             streamed_text += chunk
             parsed = current_detector.parse_analysis_result(streamed_text)
-            hero_badge = f"### 🎙️ Dominant Dialect: **{parsed['dominant_dialect']}** ({parsed['confidence']})"
-            dist_label = {k: v / 100.0 for k, v in parsed['distribution_raw'].items()}
+            
+            if parsed.get("speakers") and len(parsed["speakers"]) > 1:
+                spk_parts = [f"{s['speaker']}: {s['dialect']} ({s['percentage']:.0f}%)" for s in parsed["speakers"]]
+                spk_str = " • ".join(spk_parts)
+                hero_badge = f"### 🎙️ Dominant: **{parsed['dominant_dialect']}** ({parsed['confidence']})  \n<span style='font-size:0.95rem; font-weight:normal; opacity:0.9;'>👥 {spk_str}</span>"
+            elif parsed.get("speakers") and len(parsed["speakers"]) == 1:
+                s = parsed["speakers"][0]
+                hero_badge = f"### 🎙️ {s['speaker']} Dialect: **{s['dialect']}** ({s['percentage']:.0f}%)"
+            elif parsed['dominant_dialect'] != "Analyzing...":
+                hero_badge = f"### 🎙️ Dominant Dialect: **{parsed['dominant_dialect']}** ({parsed['confidence']})"
+            else:
+                hero_badge = "### 🎙️ Analyzing Dialect & Speakers..."
+
+            dist_label = {k: v / 100.0 for k, v in parsed['distribution_raw'].items()} if parsed['distribution_raw'] else None
 
             yield (
                 hero_badge,
@@ -184,8 +196,20 @@ def analyze_file_upload(file_obj, start_time, duration, custom_notes, model_choi
         ):
             streamed_text += chunk
             parsed = current_detector.parse_analysis_result(streamed_text)
-            hero_badge = f"### 🎙️ Dominant Dialect: **{parsed['dominant_dialect']}** ({parsed['confidence']})"
-            dist_label = {k: v / 100.0 for k, v in parsed['distribution_raw'].items()}
+            
+            if parsed.get("speakers") and len(parsed["speakers"]) > 1:
+                spk_parts = [f"{s['speaker']}: {s['dialect']} ({s['percentage']:.0f}%)" for s in parsed["speakers"]]
+                spk_str = " • ".join(spk_parts)
+                hero_badge = f"### 🎙️ Dominant: **{parsed['dominant_dialect']}** ({parsed['confidence']})  \n<span style='font-size:0.95rem; font-weight:normal; opacity:0.9;'>👥 {spk_str}</span>"
+            elif parsed.get("speakers") and len(parsed["speakers"]) == 1:
+                s = parsed["speakers"][0]
+                hero_badge = f"### 🎙️ {s['speaker']} Dialect: **{s['dialect']}** ({s['percentage']:.0f}%)"
+            elif parsed['dominant_dialect'] != "Analyzing...":
+                hero_badge = f"### 🎙️ Dominant Dialect: **{parsed['dominant_dialect']}** ({parsed['confidence']})"
+            else:
+                hero_badge = "### 🎙️ Analyzing Dialect & Speakers..."
+
+            dist_label = {k: v / 100.0 for k, v in parsed['distribution_raw'].items()} if parsed['distribution_raw'] else None
 
             yield (
                 hero_badge,
@@ -230,16 +254,16 @@ custom_css = """
 """
 
 def create_ui():
-    with gr.Blocks(title="Arabic Dialect Classifier | مُشخِّص اللهجات العربية") as demo:
+    with gr.Blocks(title="Arabic Dialect & Speaker Classifier | مُشخِّص اللهجات العربية") as demo:
         with gr.Row():
             gr.HTML("""
                 <div class="header-box">
-                    <h1 style="font-size: 2.2rem; margin-bottom: 8px; color: #ffffff;">🎙️ مُشَخِّص اللهجات العربية | Arabic Dialect Classifier</h1>
+                    <h1 style="font-size: 2.2rem; margin-bottom: 8px; color: #ffffff;">🎙️ مُشَخِّص اللهجات والمتحدثين | Arabic Dialect & Speaker Identifier</h1>
                     <p style="font-size: 1.1rem; color: #e2e8f0; margin: 0;">
-                        Identify Saudi (سعودي), Bahraini (بحريني), Lebanese (لبناني), and MSA (الفصحى) from YouTube podcasts and audio.
+                        Open Arabic dialect identification and per-speaker percentage breakdowns from YouTube podcasts and audio.
                     </p>
                     <p style="font-size: 0.95rem; color: #38bdf8; margin-top: 8px; font-weight: 500;">
-                        Powered by Google Gemini 3.1 Flash • In-Memory Audio Streaming • Real-Time Dialect Breakdown
+                        Powered by Google Gemini 3.1 Flash • Open Dialect Classification • Multi-Speaker Diarization
                     </p>
                 </div>
             """)
@@ -266,10 +290,10 @@ def create_ui():
                             yt_duration = gr.Slider(
                                 minimum=15,
                                 maximum=180,
-                                value=45,
+                                value=60,
                                 step=15,
                                 label="⏳ Sample Duration (Seconds)",
-                                info="Audio slice length (45–90s is ideal)"
+                                info="45–60s for 1-2 speakers, 90–120s recommended for 3–4+ speaker panels"
                             )
 
                         yt_analyze_btn = gr.Button("⚡ Analyze Video / Audio", variant="primary", size="lg")
@@ -298,9 +322,10 @@ def create_ui():
                             file_duration = gr.Slider(
                                 minimum=15,
                                 maximum=180,
-                                value=45,
+                                value=60,
                                 step=15,
-                                label="⏳ Sample Duration (Seconds)"
+                                label="⏳ Sample Duration (Seconds)",
+                                info="45–60s for 1-2 speakers, 90–120s recommended for 3–4+ speaker panels"
                             )
                         file_analyze_btn = gr.Button("⚡ Analyze Uploaded File", variant="primary", size="lg")
 
@@ -312,7 +337,7 @@ def create_ui():
                     )
                     custom_notes_input = gr.Textbox(
                         label="Optional Context or Hints",
-                        placeholder="e.g. 'Pay special attention to speaker 2' or 'Verify if speaker is from Hejaz'",
+                        placeholder="e.g. 'This video has 4 speakers in a panel discussion' or 'Pay special attention to speaker 3'",
                         lines=2
                     )
 
@@ -321,8 +346,8 @@ def create_ui():
                 dominant_badge = gr.Markdown("### 🎙️ Ready for audio input", elem_classes=["dominant-badge"])
                 
                 dist_chart = gr.Label(
-                    label="📊 Dialect Distribution Breakdown (%)",
-                    num_top_classes=5
+                    label="📊 Speaker & Dialect Breakdown (%)",
+                    num_top_classes=8
                 )
 
                 audio_player = gr.Audio(

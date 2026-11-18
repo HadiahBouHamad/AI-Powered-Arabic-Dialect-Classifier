@@ -1,6 +1,6 @@
 """
 Arabic Dialect Detector Engine
-Specialized for Saudi, Bahraini, Lebanese, and MSA (Modern Standard Arabic).
+Open dialect identification with multi-speaker detection and percentage breakdowns.
 Powered by Google Gemini 3.1 Flash and in-memory audio extraction.
 """
 
@@ -36,48 +36,52 @@ DEFAULT_MODEL = os.getenv("GEMINI_DIALECT_MODEL", "gemini-3.1-flash-lite")
 FALLBACK_MODELS = ["gemini-3.5-flash", "gemini-3.8-flash"]
 
 SYSTEM_PROMPT = """
-You are an elite Arabic sociolinguist and dialectologist specializing in phonetics, morphology, and dialect identification.
-You will listen directly to an audio excerpt from a YouTube video or podcast.
+You are an elite Arabic sociolinguist and dialectologist specializing in Arabic phonetics, morphology, acoustic cues, and dialect identification.
+You will listen directly to an audio excerpt from a video, podcast, or recording.
 
-Your task is to identify which Arabic dialect is spoken.
-
-THE 4 TARGET CLASSES ARE:
-1. Saudi (including Najdi, Hejazi, Sharqawi, and Southern accents)
-2. Bahraini (including Bahrani and Sunni/Gulf Bahraini accents)
-3. Lebanese (the most lebanese dialects spoken in Lebanon, including urban and rural variations)
-4. MSA (Modern Standard Arabic / الفصحى used in formal media, news, and speeches)
-
-IF THE AUDIO IS IN ANY OTHER DIALECT (e.g. Egyptian, Moroccan/Darija, Algerian, Tunisian, Syrian, Palestinian, Iraqi, Sudanese) OR NON-ARABIC:
--> Classify as: "Other" (and state the detected language/dialect in parentheses, e.g. "Other (Egyptian)").
+Your task is to identify the Arabic dialect spoken by EVERY speaker in the audio excerpt.
+DO NOT restrict yourself to any predefined list of dialects. Identify any Arabic dialect or regional sub-dialect present (e.g., Egyptian [Cairene, Alexandrian, Sa'idi], Levantine [Lebanese, Syrian, Palestinian, Jordanian], Gulf / Khaleeji [Saudi - Najdi/Hejazi/Sharqawi/Southern, Emirati, Kuwaiti, Bahraini, Qatari, Omani], Iraqi [Baghdadi, Southern, Moslawi], Yemeni, Sudanese, Maghrebi [Moroccan Darija, Algerian, Tunisian, Libyan], Modern Standard Arabic / MSA [الفصحى], etc.).
 
 CRITICAL EVALUATION RULES:
-1. FOCUS STRICTLY ON THE ARABIC BASE:
-   - Disregard foreign code-switching or loanwords (e.g., English tech words or French words like 'bonjour', 'merci', 'cava'). Judge solely based on the Arabic phonology, grammar, lexical terms, and intonation.
-2. LONG-FORM & MULTI-SPEAKER / MIXED REGISTERS:
-   - Provide the dominant dialect overall.
-   - Provide an estimated percentage distribution across ALL 4 target classes plus Other. The percentages MUST sum to 100%.
-3. LINGUISTIC EVIDENCE:
-   - Identify specific key vocabulary/phrases heard in the audio that guided your decision (e.g., 'هلا والله', 'وشو', 'عشان', 'دحين', 'شخبارك', 'وايد', 'صج', 'شو هيدا', 'هيك', 'كتير', 'عم', etc.).
-   - Note phonological traits (e.g., realization of Qaf [ق] as [g], [ʔ/hamza], or [q]; Jeem [ج] as [y] or [ʒ]; Kaf [ك] as [ch/ts]; vowel elongation and imala).
+1. MANDATORY FULL-PANEL SPEAKER DIARIZATION (3, 4, 5+ SPEAKERS):
+   - DO NOT assume there are only two speakers (Host and Guest).
+   - If there are 3, 4, 5, or more distinct individuals speaking (such as in roundtable discussions, talk shows, debates, or multi-host podcasts), you MUST track and list EVERY SINGLE UNIQUE SPEAKER separately.
+   - Distinguish speakers by vocal pitch, timbre, gender, turn-taking, and conversational dynamics.
+   - For EVERY speaker detected (Speaker 1, Speaker 2, Speaker 3, Speaker 4, etc.), identify their dialect and provide their estimated speaking percentage share of the excerpt.
+   - If only 1 speaker is speaking, output Speaker 1 (100%).
+2. OPEN DIALECT BREAKDOWN:
+   - Provide a percentage breakdown of all dialects heard in the excerpt. The percentages across all detected dialects must sum to 100%.
+   - Do NOT limit to any fixed categories; dynamically name the exact dialect(s) detected.
+3. FOCUS STRICTLY ON THE ARABIC BASE:
+   - Disregard foreign code-switching or loanwords (e.g., English tech words or French words like 'bonjour', 'merci', 'cava'). Judge solely based on Arabic phonology, grammar, lexical roots, and intonation.
+4. LINGUISTIC EVIDENCE:
+   - List key distinctive vocabulary and expressions heard from each speaker (e.g., 'دحين', 'كدة', 'عشان', 'شكو ماكو', 'وايد', 'صج', 'هيك', 'كتير', 'عم', 'بزاف', etc.).
+   - Note phonological markers (e.g., realization of Qaf [ق] as [g], [ʔ/hamza], [q]; Jeem [ج] as [y], [ʒ], or [g]; Kaf [ك] as [ch/ts]; vowel lengthening, imala).
+   - Note intonation, tempo, and pitch patterns for each speaker.
 
 OUTPUT FORMAT:
-You must output your final response structured exactly with these headers:
+You must output your response structured exactly with these headers:
 
-Dominant Dialect: <Saudi | Bahraini | Lebanese | MSA | Other>
+Dominant Dialect: <Main dialect spoken overall, e.g. Egyptian / Najdi Saudi / Lebanese / etc.>
 Confidence: <percentage, e.g. 92%>
 
-Distribution:
-- Saudi: <X>%
-- Bahraini: <Y>%
-- Lebanese: <Z>%
-- MSA: <W>%
-- Other: <K>%
+Speakers Breakdown:
+- Speaker 1: <Dialect Name> (<Percentage>%) - <Brief role or vocal trait>
+- Speaker 2: <Dialect Name> (<Percentage>%) - <Brief role or vocal trait>
+- Speaker 3: <Dialect Name> (<Percentage>%) - <Brief role or vocal trait>
+- Speaker 4: <Dialect Name> (<Percentage>%) - <Brief role or vocal trait>
+(CRITICAL: Enumerate ALL distinct speakers heard: Speaker 1, 2, 3, 4, 5... Do NOT stop at 2 speakers if more voices speak!)
+
+Dialect Distribution:
+- <Dialect 1>: <Percentage>%
+- <Dialect 2>: <Percentage>%
+(List all detected dialects with their percentage of the excerpt, summing to 100%)
 
 Linguistic Evidence:
-- Distinctive Vocabulary: <list specific words/idioms heard>
-- Phonological Markers: <realization of consonants/vowels, accents>
+- Distinctive Vocabulary: <words/expressions heard, attributed to speakers>
+- Phonological Markers: <consonant and vowel pronunciation details for each speaker>
 - Intonation & Cadence: <rhythm, pitch patterns, sentence melody>
-- Dialect Nuance & Notes: <observations on sub-dialect or code-switching if applicable>
+- Regional Nuance & Observations: <sub-dialect notes, urban vs. rural, or register shift>
 """
 
 class DialectDetector:
@@ -290,46 +294,123 @@ class DialectDetector:
     def parse_analysis_result(full_text: str) -> Dict[str, Any]:
         """
         Parses the structured response text into high-level metrics for UI cards and charts.
+        Dynamically extracts open dialects and per-speaker breakdowns without fixed list restrictions.
         """
-        dominant = "Unknown"
+        dominant = "Analyzing..."
         confidence = "N/A"
-        distribution = {"Saudi": 0.0, "Bahraini": 0.0, "Lebanese": 0.0, "MSA": 0.0, "Other": 0.0}
+        speakers = []
+        speaker_dist: Dict[str, float] = {}
+        dialect_dist: Dict[str, float] = {}
 
-        # Match Dominant Dialect
-        dom_match = re.search(r"Dominant Dialect:\s*([^\n\r]+)", full_text, re.IGNORECASE)
+        # Match Dominant / Primary Dialect
+        dom_match = re.search(r"(?:Dominant|Primary)\s*Dialect:\s*([^\n\r]+)", full_text, re.IGNORECASE)
         if dom_match:
-            raw_dom = dom_match.group(1).strip()
-            # Normalize class
-            for target in ["Saudi", "Bahraini", "Lebanese", "MSA", "Other"]:
-                if target.lower() in raw_dom.lower():
-                    dominant = target
-                    break
-            if dominant == "Unknown":
-                dominant = raw_dom
+            dominant = dom_match.group(1).strip("* ")
 
         # Match Confidence
         conf_match = re.search(r"Confidence:\s*(\d+%)", full_text, re.IGNORECASE)
         if conf_match:
             confidence = conf_match.group(1).strip()
 
-        # Match Distribution percentages
-        for key in ["Saudi", "Bahraini", "Lebanese", "MSA", "Other"]:
-            pat = rf"-\s*{key}:\s*(\d+(?:\.\d+)?)\s*%"
-            m = re.search(pat, full_text, re.IGNORECASE)
-            if m:
-                distribution[key] = float(m.group(1))
+        # Parse Speakers Breakdown (supports 3, 4, 5+ speakers, markdown headers, and variants)
+        spk_section_pattern = (
+            r"^\s*(?:#+\s*)?(?:Speakers?|Diarization)(?!\s*\d)(?:\s+(?:Breakdown|Diarization|&\s*Dialects?|List|Analysis|Overview|[^\n:]*))?\s*:\s*"
+            r"([\s\S]*?)(?=^\s*(?:#+\s*)?(?:(?:Dialect\s+)?Distribution|Linguistic Evidence|Evidence)\s*:|\Z)"
+        )
+        spk_section_match = re.search(spk_section_pattern, full_text, re.MULTILINE | re.IGNORECASE)
+        target_spk_text = spk_section_match.group(1) if spk_section_match else full_text
 
-        # Check if percentages sum to roughly 100; if not normalized, normalize
-        total = sum(distribution.values())
-        if total > 0:
-            distribution_normalized = {k: v / total for k, v in distribution.items()}
+        lines = target_spk_text.strip().split("\n")
+        for line in lines:
+            line_clean = line.strip()
+            if not line_clean:
+                continue
+            
+            # Extract percentage (e.g., (30%), [25%], - 20%, : 15%)
+            pct_m = re.search(
+                r"(?:\([^\d%]*(\d+(?:\.\d+)?)\s*%\s*[^\)]*\)|\[[^\d%]*(\d+(?:\.\d+)?)\s*%\s*\]|\s*-\s*(\d+(?:\.\d+)?)\s*%|:\s*(\d+(?:\.\d+)?)\s*%)",
+                line_clean
+            )
+            if not pct_m:
+                continue
+            pct = float([g for g in pct_m.groups() if g is not None][0])
+
+            sub_line = re.sub(r"^\s*[\*\-]\s*", "", line_clean).strip()
+            colon_idx = sub_line.find(":")
+            if colon_idx == -1:
+                continue
+
+            spk_label = sub_line[:colon_idx].strip("* ")
+            rest = sub_line[colon_idx + 1:].strip()
+
+            # Ensure this is a speaker identifier
+            is_spk = bool(re.search(r"(?:Speaker\s*\d+|Host|Guest|Panelist|Participant|Caller|Voice|Narrator|المتحدث)", spk_label, re.IGNORECASE))
+            if not is_spk and not spk_section_match:
+                continue
+
+            # Handle e.g. Speaker 1 (Egyptian): 60%
+            if "(" in spk_label and ")" in spk_label:
+                m_spk = re.match(r"^(.*?)\s*\((.*?)\)$", spk_label)
+                if m_spk:
+                    speaker_name = m_spk.group(1).strip("* ")
+                    dialect_name = m_spk.group(2).strip("* ")
+                    note = rest
+                    speakers.append({
+                        "speaker": speaker_name,
+                        "dialect": dialect_name,
+                        "percentage": pct,
+                        "note": note
+                    })
+                    speaker_dist[f"{speaker_name} ({dialect_name})"] = pct
+                    continue
+
+            speaker_name = spk_label
+            pct_str = pct_m.group(0)
+            pct_pos = rest.find(pct_str)
+            dialect_name = rest[:pct_pos].strip(" -:*()") if pct_pos != -1 else rest
+            note = rest[pct_pos + len(pct_str):].strip(" -:*") if pct_pos != -1 else ""
+            speakers.append({
+                "speaker": speaker_name,
+                "dialect": dialect_name,
+                "percentage": pct,
+                "note": note
+            })
+            speaker_dist[f"{speaker_name} ({dialect_name})"] = pct
+
+        # Parse Dialect Distribution section dynamically
+        dist_section_match = re.search(
+            r"^\s*(?:#+\s*)?(?:Dialect\s+)?Distribution\s*:\s*([\s\S]*?)(?=^\s*(?:#+\s*)?(?:Linguistic Evidence|Evidence|Speakers? Breakdown)\s*:|\Z)",
+            full_text,
+            re.MULTILINE | re.IGNORECASE
+        )
+        if dist_section_match:
+            lines = dist_section_match.group(1).strip().split("\n")
+            for line in lines:
+                m = re.match(r"^\s*[\*\-]?\s*([^:\n\r]+?):\s*(\d+(?:\.\d+)?)\s*%", line)
+                if m:
+                    dialect_dist[m.group(1).strip("* ")] = float(m.group(2))
+
+        # Determine best breakdown for charts
+        if speaker_dist:
+            chart_dist = speaker_dist
+        elif dialect_dist:
+            chart_dist = dialect_dist
         else:
-            distribution_normalized = {k: 0.0 for k in distribution}
+            chart_dist = {}
+
+        total = sum(chart_dist.values())
+        if total > 0:
+            distribution_normalized = {k: v / total for k, v in chart_dist.items()}
+        else:
+            distribution_normalized = {k: 0.0 for k in chart_dist}
 
         return {
             "dominant_dialect": dominant,
             "confidence": confidence,
-            "distribution_raw": distribution,
+            "speakers": speakers,
+            "speaker_distribution": speaker_dist,
+            "dialect_distribution": dialect_dist,
+            "distribution_raw": chart_dist,
             "distribution_normalized": distribution_normalized,
             "full_analysis": full_text
         }

@@ -1,6 +1,6 @@
-# 🎙️ Arabic Dialect Classifier (مُشخِّص اللهجات العربية)
+# 🎙️ Arabic Dialect & Speaker Classifier (مُشخِّص اللهجات والمتحدثين)
 
-A high-performance Python solution that identifies Arabic dialects (**Saudi**, **Bahraini**, **Lebanese**, and **MSA**, plus **Other**) from YouTube links and podcasts using **Google Gemini 3.1 Flash**.
+A high-performance Python solution that performs **open Arabic dialect identification** across **every speaker** with percentage breakdowns from YouTube links, podcasts, and audio using **Google Gemini 3.1 Flash**.
 
 ---
 
@@ -8,13 +8,16 @@ A high-performance Python solution that identifies Arabic dialects (**Saudi**, *
 
 - **Direct In-Memory Streaming**: Uses `yt-dlp` to extract the live audio stream URL and pipes a targeted slice (e.g. 60–90 seconds) directly through `ffmpeg` in memory. **Zero video files downloaded to disk.**
 - **Long-Form Podcast Support**: Set arbitrary start offsets (e.g., skip 60s of intro music/sponsors) and slice lengths.
-- **Strict 4-Class + Other Focus**:
-  - **Saudi** (Najdi, Hejazi, Sharqawi, Southern)
-  - **Bahraini** (Bahrani, Sunni/Gulf Bahraini)
-  - **Lebanese** (Levantine / Shami)
+- **Open Dialect Identification**: Not restricted to a fixed list. Accurately detects any Arabic dialect or regional sub-dialect:
+  - **Egyptian** (Cairene, Alexandrian, Sa'idi)
+  - **Levantine** (Lebanese, Syrian, Palestinian, Jordanian)
+  - **Gulf / Khaleeji** (Saudi [Najdi, Hejazi, Sharqawi, Southern], Bahraini, Kuwaiti, Emirati, Qatari, Omani)
+  - **Iraqi** (Baghdadi, Southern, Moslawi)
+  - **Maghrebi** (Moroccan Darija, Algerian, Tunisian, Libyan)
+  - **Yemeni & Sudanese**
   - **MSA** (Modern Standard Arabic / الفصحى)
-  - **Other** (Egyptian, Moroccan, Iraqi, etc., or Non-Arabic)
-- **Percentage Distribution**: Provides exact estimated percentages across all target classes that sum to 100%.
+- **Multi-Speaker Diarization & Percentages**: Detects distinct speakers (Speaker 1, Speaker 2, etc.) and attributes a dialect with speaking share/confidence percentage to each speaker.
+- **Percentage Distribution**: Provides exact estimated percentages across all detected dialects summing to 100%.
 - **Arabic-First Evaluation**: Explicitly ignores foreign loanwords and code-switching (French, English), focusing strictly on Arabic phonology, morphology, vocabulary, and cadence.
 - **Real-Time Streaming Output**: Watch Gemini stream its phonetic observations and linguistic evidence token-by-token.
 - **Built-in Fallbacks**:
