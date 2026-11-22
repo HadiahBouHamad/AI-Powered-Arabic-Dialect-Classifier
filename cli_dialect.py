@@ -11,27 +11,30 @@ from dialect_engine import DialectDetector
 def main():
     parser = argparse.ArgumentParser(description="Identify Arabic Dialects and Per-Speaker Percentages from a YouTube link.")
     parser.add_argument("--url", type=str, required=True, help="YouTube video URL")
-    parser.add_argument("--start", type=int, default=60, help="Start offset in seconds (default: 60)")
+    parser.add_argument("--start", type=str, default="01:00", help="Start offset (e.g. '35:00', '1:15:00', '45m', or seconds)")
     parser.add_argument("--duration", type=int, default=90, help="Duration of audio slice in seconds (default: 90)")
-    parser.add_argument("--model", type=str, default="gemini-3.1-flash-lite", help="Gemini Flash model")
+    parser.add_argument("--model", type=str, default="auto", help="Gemini model (default: auto - uses latest working Gemini model)")
 
     args = parser.parse_args()
+
+    detector = DialectDetector(model_name=args.model)
+    start_sec = DialectDetector.parse_time_offset(args.start)
+    start_fmt = DialectDetector.format_timestamp(start_sec)
+    end_fmt = DialectDetector.format_timestamp(start_sec + args.duration)
 
     print("\n" + "="*60)
     print("  مُشخِّص اللهجات والمتحدثين | Arabic Dialect & Speaker Identifier")
     print("="*60)
     print(f"Target URL: {args.url}")
-    print(f"Sampling: {args.start}s to {args.start + args.duration}s ({args.duration}s duration)")
-    print(f"Model: {args.model}")
+    print(f"Sampling: {start_fmt} to {end_fmt} ({start_sec}s to {start_sec + args.duration}s • {args.duration}s slice)")
+    print(f"Model: {detector.model_name}")
     print("="*60 + "\n")
-
-    detector = DialectDetector(model_name=args.model)
 
     print("[1/2] Slicing YouTube audio directly in-memory...")
     try:
         audio_bytes, meta = detector.extract_audio_from_youtube(
             url=args.url,
-            start_seconds=args.start,
+            start_seconds=start_sec,
             duration_seconds=args.duration
         )
         print(f"  Title: {meta['title']}")

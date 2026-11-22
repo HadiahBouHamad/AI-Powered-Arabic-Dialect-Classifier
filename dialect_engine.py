@@ -1,7 +1,7 @@
 """
 Arabic Dialect Detector Engine
 Open dialect identification with multi-speaker detection and percentage breakdowns.
-Powered by Google Gemini 3.1 Flash and in-memory audio extraction.
+Powered by the latest working Google Gemini model and in-memory audio extraction.
 """
 
 import os
@@ -31,9 +31,8 @@ FFMPEG_DIR = os.path.dirname(FFMPEG_PATH)
 if FFMPEG_DIR not in os.environ.get("PATH", ""):
     os.environ["PATH"] = FFMPEG_DIR + os.pathsep + os.environ.get("PATH", "")
 
-# Default Gemini model
-DEFAULT_MODEL = os.getenv("GEMINI_DIALECT_MODEL", "gemini-3.1-flash-lite")
-FALLBACK_MODELS = ["gemini-3.5-flash", "gemini-3.8-flash"]
+# Default Gemini model: "auto" dynamically selects the latest working Gemini model
+DEFAULT_MODEL = os.getenv("GEMINI_DIALECT_MODEL", "auto")
 
 SYSTEM_PROMPT = """
 You are an elite Arabic sociolinguist and dialectologist specializing in Arabic phonetics, morphology, acoustic cues, and dialect identification.
@@ -43,21 +42,39 @@ Your task is to identify the Arabic dialect spoken by EVERY speaker in the audio
 DO NOT restrict yourself to any predefined list of dialects. Identify any Arabic dialect or regional sub-dialect present (e.g., Egyptian [Cairene, Alexandrian, Sa'idi], Levantine [Lebanese, Syrian, Palestinian, Jordanian], Gulf / Khaleeji [Saudi - Najdi/Hejazi/Sharqawi/Southern, Emirati, Kuwaiti, Bahraini, Qatari, Omani], Iraqi [Baghdadi, Southern, Moslawi], Yemeni, Sudanese, Maghrebi [Moroccan Darija, Algerian, Tunisian, Libyan], Modern Standard Arabic / MSA [الفصحى], etc.).
 
 CRITICAL EVALUATION RULES:
-1. MANDATORY FULL-PANEL SPEAKER DIARIZATION (3, 4, 5+ SPEAKERS):
-   - DO NOT assume there are only two speakers (Host and Guest).
-   - If there are 3, 4, 5, or more distinct individuals speaking (such as in roundtable discussions, talk shows, debates, or multi-host podcasts), you MUST track and list EVERY SINGLE UNIQUE SPEAKER separately.
-   - Distinguish speakers by vocal pitch, timbre, gender, turn-taking, and conversational dynamics.
-   - For EVERY speaker detected (Speaker 1, Speaker 2, Speaker 3, Speaker 4, etc.), identify their dialect and provide their estimated speaking percentage share of the excerpt.
-   - If only 1 speaker is speaking, output Speaker 1 (100%).
-2. OPEN DIALECT BREAKDOWN:
-   - Provide a percentage breakdown of all dialects heard in the excerpt. The percentages across all detected dialects must sum to 100%.
-   - Do NOT limit to any fixed categories; dynamically name the exact dialect(s) detected.
-3. FOCUS STRICTLY ON THE ARABIC BASE:
-   - Disregard foreign code-switching or loanwords (e.g., English tech words or French words like 'bonjour', 'merci', 'cava'). Judge solely based on Arabic phonology, grammar, lexical roots, and intonation.
-4. LINGUISTIC EVIDENCE:
-   - List key distinctive vocabulary and expressions heard from each speaker (e.g., 'دحين', 'كدة', 'عشان', 'شكو ماكو', 'وايد', 'صج', 'هيك', 'كتير', 'عم', 'بزاف', etc.).
-   - Note phonological markers (e.g., realization of Qaf [ق] as [g], [ʔ/hamza], [q]; Jeem [ج] as [y], [ʒ], or [g]; Kaf [ك] as [ch/ts]; vowel lengthening, imala).
-   - Note intonation, tempo, and pitch patterns for each speaker.
+Analyze the Arabic audio and identify each speaker separately.
+
+1. First identify how many distinct speakers are present.
+
+2. Assign a unique identifier to each speaker:
+   Speaker 1, Speaker 2, Speaker 3, etc.
+
+3. Analyze each speaker's dialect INDEPENDENTLY.
+   Do not assume speakers share the same dialect.
+
+4. Use each speaker's own pronunciation, vocabulary,
+   and grammatical patterns as evidence.
+
+5. Identify the most specific dialect supported by
+   the audio (e.g., Emirati, Lebanese, Saudi, Egyptian).
+
+6. Do not label a speaker simply as "Gulf" or
+   "Levantine" when sufficient evidence supports
+   a more specific dialect.
+
+7. If there is not enough evidence for a specific
+   dialect, use the broader dialect family and
+   mark the prediction as uncertain.
+
+8. If one speaker dominates the conversation,
+   do not automatically assign their dialect
+   to the other speakers.
+
+9. Provide a short explanation of the linguistic
+   evidence for each speaker.
+
+10. Do not invent evidence or claim certainty
+    when the audio is ambiguous.
 
 OUTPUT FORMAT:
 You must output your response structured exactly with these headers:
@@ -85,25 +102,123 @@ Linguistic Evidence:
 """
 
 class DialectDetector:
-    def __init__(self, api_key: Optional[str] = None, model_name: str = DEFAULT_MODEL):
+    def __init__(self, api_key: Optional[str] = None, model_name: Optional[str] = None):
         self.api_key = api_key or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
         if not self.api_key:
             raise ValueError(
                 "Gemini API key not found. Please set GEMINI_API_KEY or GOOGLE_API_KEY in your .env file."
             )
         self.client = genai.Client(api_key=self.api_key)
-        self.model_name = model_name
+
+        # Resolve primary model: if "auto", "latest", or None, dynamically select the latest working model
+        target = (model_name or os.getenv("GEMINI_DIALECT_MODEL") or "auto").strip()
+        if target.lower() in ("auto", "latest", "auto (latest working model)", ""):
+            discovered = self.discover_latest_gemini_models()
+            if discovered:
+                self.model_name = discovered[0]
+                logger.info(f"Dynamically resolved latest working primary model: {self.model_name}")
+            else:
+                self.model_name = "gemini-2.5-flash"
+                logger.info(f"Using default primary model: {self.model_name}")
+        else:
+            self.model_name = target
+
+        self.active_model = self.model_name
+
+    @staticmethod
+    def parse_time_offset(val: Any) -> int:
+        """
+        Parses flexible start time inputs into seconds.
+        Supports:
+          - Numbers / Floats: 2700 -> 2700
+          - Timestamp colons: '45:00' -> 2700, '01:15:30' -> 4530, '00:30' -> 30
+          - Human units: '45m' / '45min' -> 2700, '1h 30m' -> 5400, '30s' -> 30
+          - Plain numbers: '35' -> 35 mins (2100s), '2700' -> 2700s
+        """
+        if val is None:
+            return 0
+        if isinstance(val, (int, float)):
+            return max(0, int(val))
+
+        val_str = str(val).strip()
+        if not val_str:
+            return 0
+
+        # 1. Colon timestamps: MM:SS or HH:MM:SS
+        if ":" in val_str:
+            parts = [p.strip() for p in val_str.split(":")]
+            try:
+                if len(parts) == 2:
+                    return max(0, int(parts[0]) * 60 + int(float(parts[1])))
+                elif len(parts) >= 3:
+                    return max(0, int(parts[0]) * 3600 + int(parts[1]) * 60 + int(float(parts[2])))
+            except ValueError:
+                pass
+
+        # 2. String with units: e.g. 1h 30m, 45m, 30s
+        total_sec = 0
+        matched = False
+
+        h_m = re.search(r"(\d+(?:\.\d+)?)\s*(?:h|hr|hour|hours)", val_str, re.IGNORECASE)
+        if h_m:
+            total_sec += int(float(h_m.group(1)) * 3600)
+            matched = True
+
+        m_m = re.search(r"(\d+(?:\.\d+)?)\s*(?:m|min|minute|minutes)(?!s)", val_str, re.IGNORECASE)
+        if m_m:
+            total_sec += int(float(m_m.group(1)) * 60)
+            matched = True
+
+        s_m = re.search(r"(\d+(?:\.\d+)?)\s*(?:s|sec|second|seconds)", val_str, re.IGNORECASE)
+        if s_m:
+            total_sec += int(float(s_m.group(1)))
+            matched = True
+
+        if matched:
+            return max(0, total_sec)
+
+        # 3. Plain numeric string (e.g. '35', '45', '1.5', '2700')
+        try:
+            num = float(val_str)
+            # If >= 360, it was already given in raw seconds (e.g. 1800, 2700s)
+            # If < 360, treat as minutes (e.g. 35 -> 35 min = 2100s, 45 -> 45 min = 2700s)
+            if num >= 360:
+                return max(0, int(num))
+            else:
+                return max(0, int(num * 60))
+        except ValueError:
+            return 0
+
+    @staticmethod
+    def format_timestamp(seconds: int) -> str:
+        """Formats integer seconds into clean MM:SS or H:MM:SS format."""
+        seconds = max(0, int(seconds))
+        hrs = seconds // 3600
+        mins = (seconds % 3600) // 60
+        secs = seconds % 60
+        if hrs > 0:
+            return f"{hrs}:{mins:02d}:{secs:02d}"
+        return f"{mins:02d}:{secs:02d}"
 
     def extract_audio_from_youtube(
         self,
         url: str,
-        start_seconds: int = 60,
+        start_seconds: Any = 60,
         duration_seconds: int = 90
     ) -> Tuple[bytes, Dict[str, Any]]:
         """
         Extracts an audio slice directly from a YouTube URL in-memory using yt-dlp and ffmpeg pipe.
         Zero disk usage for high speed and minimal bandwidth.
         """
+        start_seconds = self.parse_time_offset(start_seconds)
+
+        # Check if URL itself has a timestamp e.g. &t=45m or ?t=2700
+        url_ts = re.search(r"[?&]t=([0-9hms]+)", url)
+        if url_ts and start_seconds in (0, 60):
+            parsed_url_ts = self.parse_time_offset(url_ts.group(1))
+            if parsed_url_ts > 0:
+                start_seconds = parsed_url_ts
+                logger.info(f"Auto-detected timestamp in YouTube URL: {url_ts.group(1)} -> {start_seconds}s")
         logger.info(f"Extracting video info from URL: {url}")
         ydl_opts = {
             "format": "bestaudio/best",
@@ -217,13 +332,14 @@ class DialectDetector:
     def extract_audio_from_file(
         self,
         file_path: str,
-        start_seconds: int = 0,
+        start_seconds: Any = 0,
         duration_seconds: int = 90
     ) -> Tuple[bytes, Dict[str, Any]]:
         """
         Extracts an in-memory audio slice from a locally uploaded audio or video file.
         Serves as a robust fallback if YouTube restricts access.
         """
+        start_seconds = self.parse_time_offset(start_seconds)
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"File not found: {file_path}")
 
@@ -255,6 +371,60 @@ class DialectDetector:
         }
         return audio_bytes, metadata
 
+    def discover_latest_gemini_models(self, exclude: Optional[list] = None) -> list:
+        """
+        Dynamically queries the Gemini API for available models and filters for
+        the latest working generative multimodal models, sorted by recency and capabilities.
+        No hardcoded fallback models are used.
+        """
+        exclude_set = set(exclude or [])
+        candidate_models: list = []
+
+        try:
+            logger.info("Querying Gemini API for latest available working models...")
+            api_models = self.client.models.list()
+
+            scored_models = []
+            for m in api_models:
+                m_name = getattr(m, "name", "")
+                if not m_name:
+                    continue
+                clean_name = m_name.replace("models/", "").replace("publishers/google/models/", "")
+
+                if clean_name in exclude_set or m_name in exclude_set:
+                    continue
+
+                name_lower = clean_name.lower()
+                if "gemini" not in name_lower:
+                    continue
+
+                # Filter out specialized, non-chat, or embedding models
+                if any(bad in name_lower for bad in ["embedding", "aqa", "imagen", "veo", "tts", "whisper", "adapter", "realtime", "live"]):
+                    continue
+
+                # Verify supported actions if available
+                actions = getattr(m, "supported_actions", None)
+                if actions and "generateContent" not in actions:
+                    continue
+
+                is_latest = 1 if "latest" in name_lower else 0
+                v_match = re.search(r"gemini[^\d]*(\d+(?:\.\d+)?)", name_lower)
+                version = float(v_match.group(1)) if v_match else (99.0 if is_latest else 1.0)
+                is_flash = 1 if "flash" in name_lower else 0
+                is_stable = 0 if any(tag in name_lower for tag in ["preview", "experimental", "exp"]) else 1
+
+                scored_models.append((version, is_flash, is_stable, clean_name))
+
+            # Sort by: Version (highest/latest first), then Flash (best for fast audio streaming), then Stable
+            scored_models.sort(key=lambda x: (x[0], x[1], x[2]), reverse=True)
+            candidate_models = [item[3] for item in scored_models]
+            logger.info(f"Dynamically discovered working Gemini models: {candidate_models}")
+
+        except Exception as err:
+            logger.error(f"Failed to query model list from Gemini API: {err}")
+
+        return candidate_models
+
     def stream_dialect_identification(
         self,
         audio_bytes: bytes,
@@ -262,7 +432,8 @@ class DialectDetector:
         custom_instructions: str = ""
     ) -> Generator[str, None, None]:
         """
-        Streams token chunks from Gemini Flash as it listens to the audio and performs linguistic analysis.
+        Streams token chunks from Gemini as it listens to the audio and performs linguistic analysis.
+        If the primary model fails, dynamically queries Gemini for the latest working model.
         """
         audio_part = types.Part.from_bytes(data=audio_bytes, mime_type=mime_type)
 
@@ -270,25 +441,58 @@ class DialectDetector:
         if custom_instructions:
             user_content += f"\n\nAdditional User Context:\n{custom_instructions}"
 
-        models_to_try = [self.model_name] + [m for m in FALLBACK_MODELS if m != self.model_name]
-        
+        primary_model = self.model_name
+        logger.info(f"Sending audio slice to primary Gemini model: {primary_model}")
+
+        # 1. Attempt with primary requested model
+        try:
+            stream = self.client.models.generate_content_stream(
+                model=primary_model,
+                contents=[audio_part, user_content]
+            )
+            has_yielded = False
+            for chunk in stream:
+                if chunk.text:
+                    has_yielded = True
+                    yield chunk.text
+            if has_yielded:
+                self.active_model = primary_model
+                return
+        except Exception as primary_err:
+            logger.warning(
+                f"Primary model '{primary_model}' failed ({primary_err}). "
+                "Checking Gemini API for the latest available working models..."
+            )
+
+        # 2. Dynamic Fallback: Query Gemini API directly for latest working models
+        discovered_models = self.discover_latest_gemini_models(exclude=[primary_model])
+        if not discovered_models:
+            raise RuntimeError(
+                f"Primary model '{primary_model}' failed, and no working fallback model could be discovered from Gemini API."
+            )
+
         last_error = None
-        for model in models_to_try:
+        for fallback_model in discovered_models:
             try:
-                logger.info(f"Sending audio slice to Gemini model: {model}")
+                logger.info(f"Attempting fallback with latest working Gemini model: {fallback_model}")
                 stream = self.client.models.generate_content_stream(
-                    model=model,
+                    model=fallback_model,
                     contents=[audio_part, user_content]
                 )
+                has_yielded = False
                 for chunk in stream:
                     if chunk.text:
+                        has_yielded = True
                         yield chunk.text
-                return
-            except Exception as e:
-                logger.warning(f"Model {model} failed with: {e}. Trying fallback if available...")
-                last_error = e
+                if has_yielded:
+                    self.active_model = fallback_model
+                    logger.info(f"Successfully generated analysis using fallback model '{fallback_model}'")
+                    return
+            except Exception as fb_err:
+                logger.warning(f"Fallback model '{fallback_model}' failed ({fb_err}). Checking next available model...")
+                last_error = fb_err
 
-        raise RuntimeError(f"All Gemini models failed. Last error: {last_error}")
+        raise RuntimeError(f"All available Gemini models failed. Last error: {last_error}")
 
     @staticmethod
     def parse_analysis_result(full_text: str) -> Dict[str, Any]:

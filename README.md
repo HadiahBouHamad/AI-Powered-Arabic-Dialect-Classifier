@@ -1,6 +1,6 @@
 # 🎙️ Arabic Dialect & Speaker Classifier (مُشخِّص اللهجات والمتحدثين)
 
-A high-performance Python solution that performs **open Arabic dialect identification** across **every speaker** with percentage breakdowns from YouTube links, podcasts, and audio using **Google Gemini 3.1 Flash**.
+A high-performance Python solution that performs **open Arabic dialect identification** across **every speaker** with percentage breakdowns from YouTube links, podcasts, and audio using **Google Gemini (dynamically selects the latest working model)**.
 
 ---
 
@@ -22,7 +22,7 @@ A high-performance Python solution that performs **open Arabic dialect identific
 - **Real-Time Streaming Output**: Watch Gemini stream its phonetic observations and linguistic evidence token-by-token.
 - **Built-in Fallbacks**:
   - Direct local audio/video file upload (MP3, WAV, M4A, MP4) if YouTube restricts a video.
-  - Automatic model fallback chain (`gemini-3.1-flash-lite` -> `gemini-3.5-flash` -> `gemini-3.8-flash`).
+  - Dynamic model discovery fallback (queries Gemini API directly for the latest working model instead of hardcoded fallbacks).
 
 ---
 
@@ -51,7 +51,7 @@ Open `http://localhost:7860` in your browser. You can enter any YouTube link or 
 
 ### 2. Run via Command Line (CLI)
 ```bash
-python cli_dialect.py --url "https://www.youtube.com/watch?v=F7-_TJ4R5YM" --start 60 --duration 90
+python cli_dialect.py --url "https://www.youtube.com/watch?v=F7-_TJ4R5YM" --start "35:00" --duration 90
 ```
 
 ---

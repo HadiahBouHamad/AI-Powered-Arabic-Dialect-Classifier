@@ -1,7 +1,7 @@
 """
 Gradio Web Interface for Arabic Dialect & Multi-Speaker Identification
 Open Arabic dialect detection with per-speaker percentages.
-Powered by Gemini 3.1 Flash and in-memory audio extraction.
+Powered by the latest working Gemini model and in-memory audio extraction.
 """
 
 import os
@@ -17,24 +17,24 @@ from dialect_engine import DialectDetector
 # Verified, active public YouTube videos for quick one-click testing
 EXAMPLES = [
     [
-        "https://www.youtube.com/watch?v=F7-_TJ4R5YM",
-        60,
-        45
+        "https://www.youtube.com/watch?v=2tYQo-kPs-Y",
+        "01:05:40",
+        60
     ],
     [
         "https://www.youtube.com/watch?v=sox2griMZ7k",
-        30,
-        45
+        "00:30",
+        60
     ],
     [
         "https://www.youtube.com/watch?v=-ZS8rqaIN34",
-        30,
-        45
+        "00:30",
+        60
     ],
     [
         "https://www.youtube.com/watch?v=12h7hw_3DEk",
-        30,
-        45
+        "00:30",
+        60
     ]
 ]
 
@@ -56,7 +56,11 @@ def analyze_youtube(url, start_time, duration, custom_notes, model_choice):
         )
         return
 
-    status_log = f"⏳ Connecting to YouTube and extracting audio from {int(start_time)}s ({int(duration)}s slice)..."
+    start_sec = DialectDetector.parse_time_offset(start_time)
+    dur_sec = int(duration)
+    formatted_start = DialectDetector.format_timestamp(start_sec)
+
+    status_log = f"⏳ Connecting to YouTube and extracting audio from {formatted_start} ({start_sec}s, {dur_sec}s slice)..."
     yield (
         "### ⏳ Processing YouTube audio in-memory...",
         None,
@@ -68,8 +72,8 @@ def analyze_youtube(url, start_time, duration, custom_notes, model_choice):
         current_detector = DialectDetector(model_name=model_choice)
         audio_bytes, meta = current_detector.extract_audio_from_youtube(
             url=url.strip(),
-            start_seconds=int(start_time),
-            duration_seconds=int(duration)
+            start_seconds=start_sec,
+            duration_seconds=dur_sec
         )
     except Exception as e:
         err_msg = f"❌ Audio Extraction Failed: {str(e)}"
@@ -86,14 +90,18 @@ def analyze_youtube(url, start_time, duration, custom_notes, model_choice):
     temp_audio.write(audio_bytes)
     temp_audio.close()
 
+    t_start_fmt = DialectDetector.format_timestamp(meta['start_time'])
+    t_end_fmt = DialectDetector.format_timestamp(meta['start_time'] + meta['slice_duration'])
     info_header = (
         f"**Title:** {meta['title']}  \n"
         f"**Channel:** {meta['channel']}  \n"
-        f"**Audio Slice:** {meta['start_time']}s to {meta['start_time'] + meta['slice_duration']}s "
-        f"({meta['audio_size_bytes'] / 1024:.1f} KB in-memory)  \n\n"
+        f"**Model:** `{current_detector.model_name}`  \n"
+        f"**Audio Slice:** {t_start_fmt} to {t_end_fmt} "
+        f"({meta['start_time']}s to {meta['start_time'] + meta['slice_duration']}s • "
+        f"{meta['audio_size_bytes'] / 1024:.1f} KB in-memory)  \n\n"
     )
 
-    status_log = info_header + "🎧 **Gemini 3.1 Flash is analyzing the dialect in real-time...**\n\n---\n\n"
+    status_log = info_header + f"🎧 **Gemini ({current_detector.model_name}) is analyzing the dialect in real-time...**\n\n---\n\n"
 
     streamed_text = ""
     try:
@@ -151,8 +159,12 @@ def analyze_file_upload(file_obj, start_time, duration, custom_notes, model_choi
         )
         return
 
+    start_sec = DialectDetector.parse_time_offset(start_time)
+    dur_sec = int(duration)
+    formatted_start = DialectDetector.format_timestamp(start_sec)
+
     file_path = file_obj.name if hasattr(file_obj, "name") else str(file_obj)
-    status_log = f"⏳ Processing uploaded file: {os.path.basename(file_path)} (from {int(start_time)}s for {int(duration)}s)..."
+    status_log = f"⏳ Processing uploaded file: {os.path.basename(file_path)} (from {formatted_start} / {start_sec}s for {dur_sec}s)..."
     yield (
         "### ⏳ Processing audio file in-memory...",
         None,
@@ -164,8 +176,8 @@ def analyze_file_upload(file_obj, start_time, duration, custom_notes, model_choi
         current_detector = DialectDetector(model_name=model_choice)
         audio_bytes, meta = current_detector.extract_audio_from_file(
             file_path=file_path,
-            start_seconds=int(start_time),
-            duration_seconds=int(duration)
+            start_seconds=start_sec,
+            duration_seconds=dur_sec
         )
     except Exception as e:
         err_msg = f"❌ File Processing Failed: {str(e)}"
@@ -181,12 +193,16 @@ def analyze_file_upload(file_obj, start_time, duration, custom_notes, model_choi
     temp_audio.write(audio_bytes)
     temp_audio.close()
 
+    t_start_fmt = DialectDetector.format_timestamp(meta['start_time'])
+    t_end_fmt = DialectDetector.format_timestamp(meta['start_time'] + meta['slice_duration'])
     info_header = (
         f"**File:** {meta['title']}  \n"
-        f"**Audio Slice:** {meta['start_time']}s to {meta['start_time'] + meta['slice_duration']}s  \n\n"
+        f"**Model:** `{current_detector.model_name}`  \n"
+        f"**Audio Slice:** {t_start_fmt} to {t_end_fmt} "
+        f"({meta['start_time']}s to {meta['start_time'] + meta['slice_duration']}s)  \n\n"
     )
 
-    status_log = info_header + "🎧 **Gemini 3.1 Flash is analyzing the dialect in real-time...**\n\n---\n\n"
+    status_log = info_header + f"🎧 **Gemini ({current_detector.model_name}) is analyzing the dialect in real-time...**\n\n---\n\n"
 
     streamed_text = ""
     try:
@@ -263,7 +279,7 @@ def create_ui():
                         Open Arabic dialect identification and per-speaker percentage breakdowns from YouTube podcasts and audio.
                     </p>
                     <p style="font-size: 0.95rem; color: #38bdf8; margin-top: 8px; font-weight: 500;">
-                        Powered by Google Gemini 3.1 Flash • Open Dialect Classification • Multi-Speaker Diarization
+                        Powered by Google Gemini (Latest Working Model) • Open Dialect Classification • Multi-Speaker Diarization
                     </p>
                 </div>
             """)
@@ -279,13 +295,11 @@ def create_ui():
                             lines=1
                         )
                         with gr.Row():
-                            yt_start = gr.Slider(
-                                minimum=0,
-                                maximum=1800,
-                                value=60,
-                                step=15,
-                                label="⏱️ Start Offset (Seconds)",
-                                info="Skip intro music or ads (e.g. 60s = 1 min in)"
+                            yt_start = gr.Textbox(
+                                label="⏱️ Start Time (Minute or Timestamp)",
+                                value="01:00",
+                                placeholder="e.g. 35:00, 1:15:00, 45m, or 45",
+                                info="Start at ANY minute (supports 'MM:SS', 'HH:MM:SS', '45m', or plain minute like '45')"
                             )
                             yt_duration = gr.Slider(
                                 minimum=15,
@@ -312,12 +326,11 @@ def create_ui():
                             file_types=["audio", "video"]
                         )
                         with gr.Row():
-                            file_start = gr.Slider(
-                                minimum=0,
-                                maximum=600,
-                                value=0,
-                                step=15,
-                                label="⏱️ Start Offset (Seconds)"
+                            file_start = gr.Textbox(
+                                label="⏱️ Start Time (Minute or Timestamp)",
+                                value="00:00",
+                                placeholder="e.g. 35:00, 1:15:00, 45m, or 0",
+                                info="Start at ANY minute (supports 'MM:SS', 'HH:MM:SS', '45m', or plain minute like '45')"
                             )
                             file_duration = gr.Slider(
                                 minimum=15,
@@ -331,9 +344,9 @@ def create_ui():
 
                 with gr.Accordion("⚙️ Advanced Settings & Custom Context", open=False):
                     model_selector = gr.Dropdown(
-                        choices=["gemini-3.1-flash-lite", "gemini-3.5-flash", "gemini-3.8-flash"],
-                        value="gemini-3.1-flash-lite",
-                        label="Gemini Flash Model Version"
+                        choices=["Auto (Latest Working Model)", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"],
+                        value="Auto (Latest Working Model)",
+                        label="Gemini Model"
                     )
                     custom_notes_input = gr.Textbox(
                         label="Optional Context or Hints",
